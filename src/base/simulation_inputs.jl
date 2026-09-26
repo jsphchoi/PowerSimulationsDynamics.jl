@@ -9,9 +9,9 @@ struct SimulationInputs
     inner_vars_count::Int
     bus_count::Int
     ode_range::UnitRange{Int}
-    ybus_rectangular::SparseArrays.SparseMatrixCSC{Float32, Int}
+    ybus_rectangular::SparseArrays.SparseMatrixCSC{Float64, Int}
     dyn_lines::Bool
-    total_shunts::SparseArrays.SparseMatrixCSC{Float32, Int}
+    total_shunts::SparseArrays.SparseMatrixCSC{Float64, Int}
     lookup::Dict{Int, Int}
     DAE_vector::Vector{Bool}
     mass_matrix::LinearAlgebra.Diagonal{Float64}
@@ -306,7 +306,7 @@ function _get_ybus(sys::PSY.System)
         end
     else
         ybus_rectangular =
-            SparseArrays.SparseMatrixCSC{Float32, Int}(zeros(2 * n_buses, 2 * n_buses))
+            SparseArrays.SparseMatrixCSC{Float64, Int}(zeros(2 * n_buses, 2 * n_buses))
         Ybus_ = PNM.Ybus(sys; include_constant_impedance_loads = false)
         lookup = Ybus_.lookup[1]
     end
@@ -363,7 +363,7 @@ function _get_shunt_values(::Union{PSY.TapTransformer, PSY.Transformer2W})
 end
 
 function _make_total_shunts(wrapped_branches, n_buses::Int)
-    shunts = SparseArrays.SparseMatrixCSC{Float32, Int}(zeros(2 * n_buses, 2 * n_buses))
+    shunts = SparseArrays.SparseMatrixCSC{Float64, Int}(zeros(2 * n_buses, 2 * n_buses))
     for br in wrapped_branches
         bus_ix_from = get_bus_ix_from(br)
         bus_ix_to = get_bus_ix_to(br)
@@ -379,7 +379,7 @@ end
 function _adjust_states!(
     DAE_vector::BitVector,
     mass_matrix::LinearAlgebra.Diagonal{Float64},
-    total_shunts::SparseArrays.SparseMatrixCSC{Float32, Int},
+    total_shunts::SparseArrays.SparseMatrixCSC{Float64, Int},
     n_buses::Int,
     sys_f::Float64,
 )

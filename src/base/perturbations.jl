@@ -109,7 +109,7 @@ function get_affect(::SimulationInputs, sys::PSY.System, pert::BranchTrip)
 end
 
 function _record_change!(
-    ybus::SparseArrays.SparseMatrixCSC{Float32, Int},
+    ybus::SparseArrays.SparseMatrixCSC{Float64, Int},
     bus_from_no::Int,
     bus_to_no::Int,
     n_buses::Int,
@@ -150,7 +150,7 @@ function _record_change!(
 end
 
 function ybus_update!(
-    ybus::SparseArrays.SparseMatrixCSC{Float32, Int},
+    ybus::SparseArrays.SparseMatrixCSC{Float64, Int},
     b::PSY.Line,
     num_bus::Dict{Int, Int},
     mult::Float64,
@@ -187,7 +187,7 @@ function ybus_update!(
 end
 
 function ybus_update!(
-    ybus::SparseArrays.SparseMatrixCSC{Float32, Int},
+    ybus::SparseArrays.SparseMatrixCSC{Float64, Int},
     b::PSY.Transformer2W,
     num_bus::Dict{Int, Int},
     mult::Float64,
@@ -224,7 +224,7 @@ function ybus_update!(
 end
 
 function ybus_update!(
-    ybus::SparseArrays.SparseMatrixCSC{Float32, Int},
+    ybus::SparseArrays.SparseMatrixCSC{Float64, Int},
     b::PSY.TapTransformer,
     num_bus::Dict{Int, Int},
     mult::Float64,
@@ -269,7 +269,7 @@ function ybus_update!(
 end
 
 function ybus_update!(
-    ybus::SparseArrays.SparseMatrixCSC{Float32, Int},
+    ybus::SparseArrays.SparseMatrixCSC{Float64, Int},
     b::PSY.PhaseShiftingTransformer,
     num_bus::Dict{Int, Int},
     mult::Float64,
@@ -344,10 +344,10 @@ This allows the user to perform branch modifications, three phase faults (with i
 """
 mutable struct NetworkSwitch <: Perturbation
     time::Float64
-    ybus_rectangular::SparseArrays.SparseMatrixCSC{Float32, Int}
+    ybus_rectangular::SparseArrays.SparseMatrixCSC{Float64, Int}
     function NetworkSwitch(
         time::Float64,
-        ybus::SparseArrays.SparseMatrixCSC{Complex{Float32}, Int},
+        ybus::SparseArrays.SparseMatrixCSC{Complex{Float64}, Int},
     )
         n_bus = size(ybus)[1]
         sub_nets = PNM.find_subnetworks(ybus, collect(1:n_bus))
