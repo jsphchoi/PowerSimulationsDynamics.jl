@@ -110,7 +110,8 @@ function _check_residual(
     tolerance::Float64,
 )
     @debug _sorted_residuals(residual)
-    val, ix = findmax(residual)
+    _, ix = findmax(abs, residual)
+    val = residual[ix]
     sum_residual = sum(abs.(residual))
     @info "Residual from initial guess: max = $(val) at $ix, total = $sum_residual"
     if sum_residual > tolerance
