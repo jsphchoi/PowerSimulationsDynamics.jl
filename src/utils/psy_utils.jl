@@ -45,7 +45,9 @@ function transform_ybus_to_rectangular(
     ybus::SparseArrays.SparseMatrixCSC{Complex{Float64}, Int},
 )
     # TODO: Improve performance here
-    return hcat(vcat(real(ybus), -imag(ybus)), vcat(imag(ybus), real(ybus)))
+    # TODO (REVIEW) Built from Ybus^T, network_model reads it by columns and so computes Ybus * V.
+    ybus_t = SparseArrays.sparse(transpose(ybus))
+    return hcat(vcat(real(ybus_t), -imag(ybus_t)), vcat(imag(ybus_t), real(ybus_t)))
 end
 
 function transform_branches_to_dynamic(sys::PSY.System, ::Type{T}) where {T <: PSY.ACBranch}

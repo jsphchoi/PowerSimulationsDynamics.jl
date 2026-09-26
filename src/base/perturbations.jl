@@ -123,28 +123,29 @@ function _record_change!(
     Y21_imag::Float64,
 )
 
+    # TODO (REVIEW) ybus_rectangular is built from Ybus^T, so Y21 goes to (from, to) and Y12 to (to, from).
     # First Quadrant Real Part Changes
     ybus[bus_from_no, bus_from_no] += Y11_real
-    ybus[bus_from_no, bus_to_no] += Y12_real
-    ybus[bus_to_no, bus_from_no] += Y21_real
+    ybus[bus_from_no, bus_to_no] += Y21_real
+    ybus[bus_to_no, bus_from_no] += Y12_real
     ybus[bus_to_no, bus_to_no] += Y22_real
 
     # Second Quadrant Imag Part changes
     ybus[bus_from_no, bus_from_no + n_buses] += Y11_imag
-    ybus[bus_from_no, bus_to_no + n_buses] += Y12_imag
-    ybus[bus_to_no, bus_from_no + n_buses] += Y21_imag
+    ybus[bus_from_no, bus_to_no + n_buses] += Y21_imag
+    ybus[bus_to_no, bus_from_no + n_buses] += Y12_imag
     ybus[bus_to_no, bus_to_no + n_buses] += Y22_imag
 
     # Third Quadrant -1*Imag Part changes
     ybus[bus_from_no + n_buses, bus_from_no] -= Y11_imag
-    ybus[bus_from_no + n_buses, bus_to_no] -= Y12_imag
-    ybus[bus_to_no + n_buses, bus_from_no] -= Y21_imag
+    ybus[bus_from_no + n_buses, bus_to_no] -= Y21_imag
+    ybus[bus_to_no + n_buses, bus_from_no] -= Y12_imag
     ybus[bus_to_no + n_buses, bus_to_no] -= Y22_imag
 
     # Fourth Quadrant Real Part Changes
     ybus[bus_from_no + n_buses, bus_from_no + n_buses] += Y11_real
-    ybus[bus_from_no + n_buses, bus_to_no + n_buses] += Y12_real
-    ybus[bus_to_no + n_buses, bus_from_no + n_buses] += Y21_real
+    ybus[bus_from_no + n_buses, bus_to_no + n_buses] += Y21_real
+    ybus[bus_to_no + n_buses, bus_from_no + n_buses] += Y12_real
     ybus[bus_to_no + n_buses, bus_to_no + n_buses] += Y22_real
     return
 end
