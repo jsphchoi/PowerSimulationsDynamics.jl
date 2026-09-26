@@ -63,9 +63,8 @@ function get_pss_input_signal(
     ω_sys::ACCEPTED_REAL_TYPES,
     dynamic_device::DynamicWrapper{PSY.DynamicGenerator{M, S, A, TG, P}},
 ) where {M <: PSY.Machine, S <: PSY.Shaft, A <: PSY.AVR, TG <: PSY.TurbineGov, P <: PSY.PSS}
-    basepower = PSY.get_base_power(dynamic_device)
-    Sbase = get_system_base_power(dynamic_device)
-    return inner_vars[τe_var] * (basepower / Sbase)
+    # TODO (REVIEW) Electric power on machine base, as in ANDES IEEEST MODE 3.
+    return inner_vars[τe_var]
 end
 
 function get_pss_input_signal(
