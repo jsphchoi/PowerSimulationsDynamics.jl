@@ -565,6 +565,144 @@ end
 function initialize_avr!(
     device_states,
     static::PSY.StaticInjection,
+    dynamic_device::DynamicWrapper{PSY.DynamicGenerator{M, S, PSY.IEEET1, TG, P}},
+    inner_vars::AbstractVector,
+) where {M <: PSY.Machine, S <: PSY.Shaft, TG <: PSY.TurbineGov, P <: PSY.PSS}
+    #Obtain Vf0 solved from Machine
+    Vf0 = inner_vars[Vf_var]
+    #Obtain measured terminal voltage
+    Vt0 = sqrt(inner_vars[VR_gen_var]^2 + inner_vars[VI_gen_var]^2)
+
+    #Get parameters
+    avr = PSY.get_avr(dynamic_device)
+    Ka = PSY.get_Ka(avr)
+    Kf = PSY.get_Kf(avr)
+    Tf = PSY.get_Tf(avr)
+    Ke = PSY.get_Ke(avr)
+    Vr_min, Vr_max = _get_Vr_lim(avr)
+
+    Se = saturation_function(avr, Vf0)
+    Vr1 = (Ke + Se) * Vf0
+    if (Vr1 > Vr_max) || (Vr1 < Vr_min)
+        @error("Regulator Voltage V_R = $(Vr1) outside the limits")
+    end
+    Vr2 = -(Kf / Tf) * Vf0
+    Vref0 = Vt0 + Vr1 / Ka
+
+    #Update V_ref
+    PSY.set_V_ref!(avr, Vref0)
+    set_V_ref(dynamic_device, Vref0)
+
+    #States of IEEET1 are Vt, Vr1, Vf, Vr2
+
+    #Update AVR states
+    avr_ix = get_local_state_ix(dynamic_device, typeof(avr))
+    avr_states = @view device_states[avr_ix]
+    avr_states[1] = Vt0 #Vt
+    avr_states[2] = Vr1 #Vr1
+    avr_states[3] = Vf0 #Vf
+    avr_states[4] = Vr2 #Vr2
+    return
+end
+
+function initialize_avr!(
+    device_states,
+    static::PSY.StaticInjection,
+    dynamic_device::DynamicWrapper{PSY.DynamicGenerator{M, S, PSY.ESST4B, TG, P}},
+    inner_vars::AbstractVector,
+) where {M <: PSY.Machine, S <: PSY.Shaft, TG <: PSY.TurbineGov, P <: PSY.PSS}
+    #Obtain Vf0 solved from Machine
+    Vf0 = inner_vars[Vf_var]
+    #Obtain measured terminal voltage
+    Vt0 = sqrt(inner_vars[VR_gen_var]^2 + inner_vars[VI_gen_var]^2)
+    #Obtain field winding current
+    Ifd0 = inner_vars[Xad_Ifd_var]
+
+    #Get parameters
+    avr = PSY.get_avr(dynamic_device)
+    Vr_min, Vr_max = PSY.get_Vr_lim(avr)
+    Vm_min, Vm_max = PSY.get_Vm_lim(avr)
+    Kg = PSY.get_Kg(avr)
+
+    V_B0 = _get_V_B(avr, Vt0, Ifd0)
+    V_M0 = Vf0 / V_B0
+    V_R0 = Kg * Vf0
+    if (V_R0 > Vr_max) || (V_R0 < Vr_min)
+        @error("Regulator Voltage V_R = $(V_R0) outside the limits")
+    end
+    if (V_M0 > Vm_max) || (V_M0 < Vm_min)
+        @error("Inner loop output V_M = $(V_M0) outside the limits")
+    end
+
+    #Update V_ref
+    Vref0 = Vt0
+    PSY.set_V_ref!(avr, Vref0)
+    set_V_ref(dynamic_device, Vref0)
+
+    #States of ESST4B are Vt, Vr1, Vr2, Vm
+
+    #Update AVR states
+    avr_ix = get_local_state_ix(dynamic_device, typeof(avr))
+    avr_states = @view device_states[avr_ix]
+    avr_states[1] = Vt0 #Vt
+    avr_states[2] = V_R0 #Vr1
+    avr_states[3] = V_R0 #Vr2
+    avr_states[4] = V_M0 #Vm
+    return
+end
+
+function initialize_avr!(
+    device_states,
+    static::PSY.StaticInjection,
+    dynamic_device::DynamicWrapper{PSY.DynamicGenerator{M, S, PSY.EXAC4, TG, P}},
+    inner_vars::AbstractVector,
+) where {M <: PSY.Machine, S <: PSY.Shaft, TG <: PSY.TurbineGov, P <: PSY.PSS}
+    #Obtain Vf0 solved from Machine
+    Vf0 = inner_vars[Vf_var]
+    #Obtain measured terminal voltage
+    Vt0 = sqrt(inner_vars[VR_gen_var]^2 + inner_vars[VI_gen_var]^2)
+    #Obtain field winding current
+    Ifd0 = inner_vars[Xad_Ifd_var]
+
+    #Get parameters
+    avr = PSY.get_avr(dynamic_device)
+    Vi_min, Vi_max = PSY.get_Vi_lim(avr)
+    Tc = PSY.get_Tc(avr)
+    Tb = PSY.get_Tb(avr)
+    Ka = PSY.get_Ka(avr)
+    Vr_min, Vr_max = PSY.get_Vr_lim(avr)
+    Kc = PSY.get_Kc(avr)
+
+    V_in0 = Vf0 / Ka
+    if (V_in0 > Vi_max) || (V_in0 < Vi_min)
+        @error("Input voltage V_in = $(V_in0) outside the limits")
+    end
+    if (Vf0 > Vr_max - Kc * Ifd0) || (Vf0 < Vr_min - Kc * Ifd0)
+        @error(
+            "Field Voltage for AVR in $(PSY.get_name(dynamic_device)) is $(Vf0) pu, which is outside its limits.  Consider updating the operating point."
+        )
+    end
+    Tc_Tb_ratio = Tb <= eps() ? 0.0 : Tc / Tb
+
+    #Update V_ref
+    Vref0 = Vt0 + V_in0
+    PSY.set_V_ref!(avr, Vref0)
+    set_V_ref(dynamic_device, Vref0)
+
+    #States of EXAC4 are Vm, Vrll, Vr
+
+    #Update AVR states
+    avr_ix = get_local_state_ix(dynamic_device, typeof(avr))
+    avr_states = @view device_states[avr_ix]
+    avr_states[1] = Vt0 #Vm
+    avr_states[2] = (1.0 - Tc_Tb_ratio) * V_in0 #Vrll
+    avr_states[3] = Vf0 #Vr
+    return
+end
+
+function initialize_avr!(
+    device_states,
+    static::PSY.StaticInjection,
     dynamic_device::DynamicWrapper{PSY.DynamicGenerator{M, S, PSY.ESST1A, TG, P}},
     inner_vars::AbstractVector,
 ) where {M <: PSY.Machine, S <: PSY.Shaft, TG <: PSY.TurbineGov, P <: PSY.PSS}

@@ -965,6 +965,64 @@ function _field_voltage(
 end
 
 """
+Function to obtain the field voltage time series of a Dynamic Generator with avr ESST4B.
+
+"""
+function _field_voltage(
+    avr::PSY.ESST4B,
+    name::String,
+    res::SimulationResults,
+    dt::Union{Nothing, Float64, Vector{Float64}},
+    unique_timestamps::Bool = true,
+)
+    # Obtain states Vr2 and Vm
+    ts, Vr2 = post_proc_state_series(res, (name, :Vr2), dt, unique_timestamps)
+    _, Vm = post_proc_state_series(res, (name, :Vm), dt, unique_timestamps)
+
+    # Obtain field current
+    _, Xad_Ifd = post_proc_field_current_series(res, name, dt, unique_timestamps)
+
+    # Obtain machine's terminal voltage
+    bus_str = split(name, "-")[2]
+    bus_num = parse(Int, bus_str)
+    _, Vt = get_voltage_magnitude_series(res, bus_num; dt = dt)
+
+    Efd = zeros(length(ts))
+    for ix in eachindex(ts)
+        V_B = _get_V_B(avr, Vt[ix], Xad_Ifd[ix])
+        _, V_M = _get_V_M(avr, Vr2[ix], Vm[ix], V_B)
+        Efd[ix] = V_B * V_M
+    end
+
+    return ts, Efd
+end
+
+"""
+Function to obtain the field voltage time series of a Dynamic Generator with avr EXAC4.
+
+"""
+function _field_voltage(
+    avr::PSY.EXAC4,
+    name::String,
+    res::SimulationResults,
+    dt::Union{Nothing, Float64, Vector{Float64}},
+    unique_timestamps::Bool = true,
+)
+    # Obtain state Vr
+    ts, Vr = post_proc_state_series(res, (name, :Vr), dt, unique_timestamps)
+
+    # Obtain field current
+    _, Xad_Ifd = post_proc_field_current_series(res, name, dt, unique_timestamps)
+
+    # Get parameters
+    Vr_min, Vr_max = PSY.get_Vr_lim(avr)
+    Kc = PSY.get_Kc(avr)
+
+    Vf = clamp.(Vr, Vr_min .- Kc .* Xad_Ifd, Vr_max .- Kc .* Xad_Ifd)
+    return ts, Vf
+end
+
+"""
 Function to obtain the pss output time series of a Dynamic Generator with pss PSSFixed.
 
 """
@@ -1321,4 +1379,47 @@ function _mechanical_torque(
 )
     ts, τm = post_proc_state_series(res, (name, :τm), dt, unique_timestamps)
     return ts, τm
+end
+
+"""
+Function to obtain the mechanical torque time series of a Dynamic Generator with IEEETurbineGov1 (IEEEG1) Turbine Governor.
+
+"""
+function _mechanical_torque(
+    tg::PSY.IEEETurbineGov1,
+    name::String,
+    res::SimulationResults,
+    dt::Union{Nothing, Float64, Vector{Float64}},
+    unique_timestamps::Bool = true,
+)
+    # Get state results
+    ts, x_g3 = post_proc_state_series(res, (name, :x_g3), dt, unique_timestamps)
+    _, x_g4 = post_proc_state_series(res, (name, :x_g4), dt, unique_timestamps)
+    _, x_g5 = post_proc_state_series(res, (name, :x_g5), dt, unique_timestamps)
+    _, x_g6 = post_proc_state_series(res, (name, :x_g6), dt, unique_timestamps)
+    _, ω = post_proc_state_series(res, (name, :ω), dt, unique_timestamps)
+    P_m =
+        PSY.get_K1(tg) .* x_g3 .+ PSY.get_K3(tg) .* x_g4 .+ PSY.get_K5(tg) .* x_g5 .+
+        PSY.get_K7(tg) .* x_g6
+    return ts, P_m ./ ω
+end
+
+"""
+Function to obtain the mechanical torque time series of a Dynamic Generator with IEESGO Turbine Governor.
+
+"""
+function _mechanical_torque(
+    tg::PSY.IEESGO,
+    name::String,
+    res::SimulationResults,
+    dt::Union{Nothing, Float64, Vector{Float64}},
+    unique_timestamps::Bool = true,
+)
+    # Get state results
+    ts, x_g3 = post_proc_state_series(res, (name, :x_g3), dt, unique_timestamps)
+    _, x_g4 = post_proc_state_series(res, (name, :x_g4), dt, unique_timestamps)
+    _, x_g5 = post_proc_state_series(res, (name, :x_g5), dt, unique_timestamps)
+    _, ω = post_proc_state_series(res, (name, :ω), dt, unique_timestamps)
+    P_m = (1.0 - PSY.get_K2(tg)) .* x_g3 .+ (1.0 - PSY.get_K3(tg)) .* x_g4 .+ x_g5
+    return ts, P_m ./ ω
 end

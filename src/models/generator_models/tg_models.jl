@@ -67,6 +67,32 @@ function mass_matrix_tg_entries!(
     return
 end
 
+function mass_matrix_tg_entries!(
+    mass_matrix,
+    tg::PSY.IEEETurbineGov1,
+    global_index::Base.ImmutableDict{Symbol, Int64},
+)
+    mass_matrix[global_index[:x_g1], global_index[:x_g1]] = PSY.get_T1(tg)
+    mass_matrix[global_index[:x_g3], global_index[:x_g3]] = PSY.get_T4(tg)
+    mass_matrix[global_index[:x_g4], global_index[:x_g4]] = PSY.get_T5(tg)
+    mass_matrix[global_index[:x_g5], global_index[:x_g5]] = PSY.get_T6(tg)
+    mass_matrix[global_index[:x_g6], global_index[:x_g6]] = PSY.get_T7(tg)
+    return
+end
+
+function mass_matrix_tg_entries!(
+    mass_matrix,
+    tg::PSY.IEESGO,
+    global_index::Base.ImmutableDict{Symbol, Int64},
+)
+    mass_matrix[global_index[:x_g1], global_index[:x_g1]] = PSY.get_T1(tg)
+    mass_matrix[global_index[:x_g2], global_index[:x_g2]] = PSY.get_T3(tg)
+    mass_matrix[global_index[:x_g3], global_index[:x_g3]] = PSY.get_T4(tg)
+    mass_matrix[global_index[:x_g4], global_index[:x_g4]] = PSY.get_T5(tg)
+    mass_matrix[global_index[:x_g5], global_index[:x_g5]] = PSY.get_T6(tg)
+    return
+end
+
 ##################################
 ##### Differential Equations #####
 ##################################
@@ -271,6 +297,144 @@ function mdl_tg_ode!(
     #Compute 2 State TG ODE:
     output_ode[local_ix[1]] = dxg1_dt
     output_ode[local_ix[2]] = dxg2_dt
+
+    #Update mechanical torque
+    inner_vars[τm_var] = P_m / ω[1]
+
+    return
+end
+
+function mdl_tg_ode!(
+    device_states::AbstractArray{<:ACCEPTED_REAL_TYPES},
+    output_ode::AbstractArray{<:ACCEPTED_REAL_TYPES},
+    inner_vars::AbstractArray{<:ACCEPTED_REAL_TYPES},
+    ω_sys::ACCEPTED_REAL_TYPES,
+    device::DynamicWrapper{PSY.DynamicGenerator{M, S, A, PSY.IEEETurbineGov1, P}},
+    h,
+    t,
+) where {M <: PSY.Machine, S <: PSY.Shaft, A <: PSY.AVR, P <: PSY.PSS}
+
+    #Obtain TG
+    tg = PSY.get_prime_mover(device)
+    #Obtain references
+    P_ref = get_P_ref(device)
+
+    #Obtain indices for component w/r to device
+    local_ix = get_local_state_ix(device, typeof(tg))
+
+    #Define internal states for component
+    internal_states = @view device_states[local_ix]
+    x_g1 = internal_states[1]
+    x_g2 = internal_states[2]
+    x_g3 = internal_states[3]
+    x_g4 = internal_states[4]
+    x_g5 = internal_states[5]
+    x_g6 = internal_states[6]
+
+    #Obtain external states inputs for component
+    external_ix = get_input_port_ix(device, typeof(tg))
+    ω = @view device_states[external_ix]
+
+    #Get Parameters
+    K = PSY.get_K(tg)
+    T1 = PSY.get_T1(tg)
+    T2 = PSY.get_T2(tg)
+    T3 = PSY.get_T3(tg) # T3 > 0
+    U0 = PSY.get_U0(tg)
+    U_c = PSY.get_U_c(tg)
+    P_min, P_max = PSY.get_valve_position_limits(tg)
+    T4 = PSY.get_T4(tg)
+    K1 = PSY.get_K1(tg)
+    T5 = PSY.get_T5(tg)
+    K3 = PSY.get_K3(tg)
+    T6 = PSY.get_T6(tg)
+    K5 = PSY.get_K5(tg)
+    T7 = PSY.get_T7(tg)
+    K7 = PSY.get_K7(tg)
+
+    #Compute block derivatives
+    y_ll, dxg1_dt = lead_lag_mass_matrix(1.0 - ω[1], x_g1, K, T2, T1)
+    x_g2_sat = clamp(x_g2, P_min, P_max)
+    valve_speed = clamp((y_ll + P_ref - x_g2_sat) / T3, U_c, U0)
+    _, dxg2_dt = integrator_nonwindup_mass_matrix(valve_speed, x_g2, 1.0, 1.0, P_min, P_max)
+    _, dxg3_dt = low_pass_mass_matrix(x_g2_sat, x_g3, 1.0, T4)
+    _, dxg4_dt = low_pass_mass_matrix(x_g3, x_g4, 1.0, T5)
+    _, dxg5_dt = low_pass_mass_matrix(x_g4, x_g5, 1.0, T6)
+    _, dxg6_dt = low_pass_mass_matrix(x_g5, x_g6, 1.0, T7)
+    # TODO (REVIEW) Low pressure outputs (K2, K4, K6, K8) drive a second machine, not modeled.
+    P_m = K1 * x_g3 + K3 * x_g4 + K5 * x_g5 + K7 * x_g6
+
+    #Compute 6 State TG ODE:
+    output_ode[local_ix[1]] = dxg1_dt
+    output_ode[local_ix[2]] = dxg2_dt
+    output_ode[local_ix[3]] = dxg3_dt
+    output_ode[local_ix[4]] = dxg4_dt
+    output_ode[local_ix[5]] = dxg5_dt
+    output_ode[local_ix[6]] = dxg6_dt
+
+    #Update mechanical torque
+    inner_vars[τm_var] = P_m / ω[1]
+
+    return
+end
+
+function mdl_tg_ode!(
+    device_states::AbstractArray{<:ACCEPTED_REAL_TYPES},
+    output_ode::AbstractArray{<:ACCEPTED_REAL_TYPES},
+    inner_vars::AbstractArray{<:ACCEPTED_REAL_TYPES},
+    ω_sys::ACCEPTED_REAL_TYPES,
+    device::DynamicWrapper{PSY.DynamicGenerator{M, S, A, PSY.IEESGO, P}},
+    h,
+    t,
+) where {M <: PSY.Machine, S <: PSY.Shaft, A <: PSY.AVR, P <: PSY.PSS}
+
+    #Obtain TG
+    tg = PSY.get_prime_mover(device)
+    #Obtain references
+    P_ref = get_P_ref(device)
+
+    #Obtain indices for component w/r to device
+    local_ix = get_local_state_ix(device, typeof(tg))
+
+    #Define internal states for component
+    internal_states = @view device_states[local_ix]
+    x_g1 = internal_states[1]
+    x_g2 = internal_states[2]
+    x_g3 = internal_states[3]
+    x_g4 = internal_states[4]
+    x_g5 = internal_states[5]
+
+    #Obtain external states inputs for component
+    external_ix = get_input_port_ix(device, typeof(tg))
+    ω = @view device_states[external_ix]
+
+    #Get Parameters
+    T1 = PSY.get_T1(tg)
+    T2 = PSY.get_T2(tg)
+    T3 = PSY.get_T3(tg)
+    T4 = PSY.get_T4(tg)
+    T5 = PSY.get_T5(tg)
+    T6 = PSY.get_T6(tg)
+    K1 = PSY.get_K1(tg)
+    K2 = PSY.get_K2(tg)
+    K3 = PSY.get_K3(tg)
+    P_min, P_max = PSY.get_P_lim(tg)
+
+    #Compute block derivatives
+    _, dxg1_dt = low_pass_mass_matrix(ω[1] - 1.0, x_g1, K1, T1)
+    y_ll, dxg2_dt = lead_lag_mass_matrix(x_g1, x_g2, 1.0, T2, T3)
+    P_in = clamp(P_ref - y_ll, P_min, P_max)
+    _, dxg3_dt = low_pass_mass_matrix(P_in, x_g3, 1.0, T4)
+    _, dxg4_dt = low_pass_mass_matrix(x_g3, x_g4, K2, T5)
+    _, dxg5_dt = low_pass_mass_matrix(x_g4, x_g5, K3, T6)
+    P_m = (1.0 - K2) * x_g3 + (1.0 - K3) * x_g4 + x_g5
+
+    #Compute 5 State TG ODE:
+    output_ode[local_ix[1]] = dxg1_dt
+    output_ode[local_ix[2]] = dxg2_dt
+    output_ode[local_ix[3]] = dxg3_dt
+    output_ode[local_ix[4]] = dxg4_dt
+    output_ode[local_ix[5]] = dxg5_dt
 
     #Update mechanical torque
     inner_vars[τm_var] = P_m / ω[1]

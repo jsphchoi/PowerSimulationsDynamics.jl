@@ -66,6 +66,37 @@ end
 
 function mass_matrix_avr_entries!(
     mass_matrix,
+    avr::PSY.IEEET1,
+    global_index::Base.ImmutableDict{Symbol, Int64},
+)
+    mass_matrix[global_index[:Vt], global_index[:Vt]] = PSY.get_Tr(avr)
+    mass_matrix[global_index[:Vr1], global_index[:Vr1]] = PSY.get_Ta(avr)
+    return
+end
+
+function mass_matrix_avr_entries!(
+    mass_matrix,
+    avr::PSY.ESST4B,
+    global_index::Base.ImmutableDict{Symbol, Int64},
+)
+    mass_matrix[global_index[:Vt], global_index[:Vt]] = PSY.get_Tr(avr)
+    mass_matrix[global_index[:Vr2], global_index[:Vr2]] = PSY.get_Ta(avr)
+    return
+end
+
+function mass_matrix_avr_entries!(
+    mass_matrix,
+    avr::PSY.EXAC4,
+    global_index::Base.ImmutableDict{Symbol, Int64},
+)
+    mass_matrix[global_index[:Vm], global_index[:Vm]] = PSY.get_Tr(avr)
+    mass_matrix[global_index[:Vrll], global_index[:Vrll]] = PSY.get_Tb(avr)
+    mass_matrix[global_index[:Vr], global_index[:Vr]] = PSY.get_Ta(avr)
+    return
+end
+
+function mass_matrix_avr_entries!(
+    mass_matrix,
     avr::PSY.ESST1A,
     global_index::Base.ImmutableDict{Symbol, Int64},
 )
@@ -655,6 +686,220 @@ function mdl_avr_ode!(
 
     #Update inner_vars
     inner_vars[Vf_var] = Vf
+    return
+end
+
+# TODO (REVIEW) IEEET1 regulator limits, VRMAX = 0 read as 999 as in ANDES.
+function _get_Vr_lim(avr::PSY.IEEET1)
+    Vr_min, Vr_max = PSY.get_Vr_lim(avr)
+    return Vr_min, (Vr_max == 0.0 ? 999.0 : Vr_max)
+end
+
+function mdl_avr_ode!(
+    device_states::AbstractArray,
+    output_ode::AbstractArray,
+    inner_vars::AbstractArray,
+    dynamic_device::DynamicWrapper{PSY.DynamicGenerator{M, S, PSY.IEEET1, TG, P}},
+    h,
+    t,
+) where {M <: PSY.Machine, S <: PSY.Shaft, TG <: PSY.TurbineGov, P <: PSY.PSS}
+
+    #Obtain references
+    V_ref = get_V_ref(dynamic_device)
+
+    #Obtain avr
+    avr = PSY.get_avr(dynamic_device)
+
+    #Obtain indices for component w/r to device
+    local_ix = get_local_state_ix(dynamic_device, typeof(avr))
+
+    #Define inner states for component
+    internal_states = @view device_states[local_ix]
+    Vt = internal_states[1]
+    Vr1 = internal_states[2]
+    Vf = internal_states[3]
+    Vr2 = internal_states[4]
+
+    #Define external states for device
+    V_th = sqrt(inner_vars[VR_gen_var]^2 + inner_vars[VI_gen_var]^2) # machine's terminal voltage
+    Vs = inner_vars[V_pss_var] # PSS output
+
+    #Get parameters
+    Tr = PSY.get_Tr(avr)
+    Ka = PSY.get_Ka(avr)
+    Ta = PSY.get_Ta(avr)
+    Vr_min, Vr_max = _get_Vr_lim(avr)
+    Ke = PSY.get_Ke(avr)
+    Te = PSY.get_Te(avr) # Te > 0
+    Kf = PSY.get_Kf(avr)
+    Tf = PSY.get_Tf(avr) # Tf > 0
+
+    #Obtain saturation
+    Se = saturation_function(avr, Vf)
+
+    #Compute block derivatives
+    _, dVt_dt = low_pass_mass_matrix(V_th, Vt, 1.0, Tr)
+    V_F, dVr2_dt = high_pass(Vf, Vr2, Kf, Tf)
+    V_in = V_ref + Vs - Vt - V_F
+    if Ta < eps()
+        V_R = clamp(Ka * V_in, Vr_min, Vr_max)
+        dVr1_dt = V_R - Vr1
+    else
+        V_R, dVr1_dt = low_pass_nonwindup_mass_matrix(V_in, Vr1, Ka, Ta, Vr_min, Vr_max)
+    end
+    dVf_dt = (1.0 / Te) * (V_R - Ke * Vf - Se * Vf)
+
+    #Compute 4 States AVR ODE:
+    output_ode[local_ix[1]] = dVt_dt
+    output_ode[local_ix[2]] = dVr1_dt
+    output_ode[local_ix[3]] = dVf_dt
+    output_ode[local_ix[4]] = dVr2_dt
+
+    #Update inner_vars
+    inner_vars[Vf_var] = Vf
+    return
+end
+
+# TODO (REVIEW) ESST4B rectifier output V_B, terminal current terms (Ki, Xl) not implemented.
+function _get_V_B(avr::PSY.ESST4B, V_th::ACCEPTED_REAL_TYPES, Ifd::ACCEPTED_REAL_TYPES)
+    if PSY.get_Ki(avr) != 0.0 || PSY.get_Xl(avr) != 0.0
+        error("Terminal current compensation for AVR ESST4B not implemented yet.")
+    end
+    V_e = PSY.get_Kp(avr) * V_th
+    I_n = PSY.get_Kc(avr) * Ifd / V_e
+    return min(V_e * rectifier_function(I_n), PSY.get_VB_max(avr))
+end
+
+# TODO (REVIEW) ESST4B inner PI output V_M, Kg feedback of V_B * V_M solved in closed form.
+function _get_V_M(
+    avr::PSY.ESST4B,
+    Vr2::ACCEPTED_REAL_TYPES,
+    Vm::ACCEPTED_REAL_TYPES,
+    V_B::ACCEPTED_REAL_TYPES,
+)
+    K_pm = PSY.get_K_pm(avr)
+    Kg = PSY.get_Kg(avr)
+    Vm_min, Vm_max = PSY.get_Vm_lim(avr)
+    V_M = clamp((K_pm * Vr2 + Vm) / (1.0 + K_pm * Kg * V_B), Vm_min, Vm_max)
+    y_pm = K_pm * (Vr2 - Kg * V_B * V_M) + Vm
+    return y_pm, V_M
+end
+
+function mdl_avr_ode!(
+    device_states::AbstractArray,
+    output_ode::AbstractArray,
+    inner_vars::AbstractArray,
+    dynamic_device::DynamicWrapper{PSY.DynamicGenerator{M, S, PSY.ESST4B, TG, P}},
+    h,
+    t,
+) where {M <: PSY.Machine, S <: PSY.Shaft, TG <: PSY.TurbineGov, P <: PSY.PSS}
+
+    #Obtain references
+    V_ref = get_V_ref(dynamic_device)
+
+    #Obtain avr
+    avr = PSY.get_avr(dynamic_device)
+
+    #Obtain indices for component w/r to device
+    local_ix = get_local_state_ix(dynamic_device, typeof(avr))
+
+    #Define inner states for component
+    internal_states = @view device_states[local_ix]
+    Vt = internal_states[1]
+    Vr1 = internal_states[2]
+    Vr2 = internal_states[3]
+    Vm = internal_states[4]
+
+    #Define external states for device
+    V_th = sqrt(inner_vars[VR_gen_var]^2 + inner_vars[VI_gen_var]^2) # machine's terminal voltage
+    Vs = inner_vars[V_pss_var] # PSS output
+    Ifd = inner_vars[Xad_Ifd_var] # machine's field current in exciter base
+
+    #Get parameters
+    Tr = PSY.get_Tr(avr)
+    K_pr = PSY.get_K_pr(avr)
+    K_ir = PSY.get_K_ir(avr)
+    Vr_min, Vr_max = PSY.get_Vr_lim(avr)
+    Ta = PSY.get_Ta(avr)
+    K_im = PSY.get_K_im(avr)
+    Kg = PSY.get_Kg(avr)
+    Ks = 2.0 # TODO (REVIEW) ANDES tracking anti-windup gain of both PI blocks (config ksr, ksm).
+
+    #Compute block derivatives
+    _, dVt_dt = low_pass_mass_matrix(V_th, Vt, 1.0, Tr)
+    V_in = V_ref + Vs - Vt
+    y_pr = K_pr * V_in + Vr1
+    V_R = clamp(y_pr, Vr_min, Vr_max)
+    dVr1_dt = K_ir * (V_in - Ks * (y_pr - V_R))
+    _, dVr2_dt = low_pass_mass_matrix(V_R, Vr2, 1.0, Ta)
+    V_B = _get_V_B(avr, V_th, Ifd)
+    y_pm, V_M = _get_V_M(avr, Vr2, Vm, V_B)
+    Efd = V_B * V_M
+    dVm_dt = K_im * (Vr2 - Kg * Efd - Ks * (y_pm - V_M))
+
+    #Compute 4 States AVR ODE:
+    output_ode[local_ix[1]] = dVt_dt
+    output_ode[local_ix[2]] = dVr1_dt
+    output_ode[local_ix[3]] = dVr2_dt
+    output_ode[local_ix[4]] = dVm_dt
+
+    #Update inner_vars
+    inner_vars[Vf_var] = Efd
+    return
+end
+
+function mdl_avr_ode!(
+    device_states::AbstractArray,
+    output_ode::AbstractArray,
+    inner_vars::AbstractArray,
+    dynamic_device::DynamicWrapper{PSY.DynamicGenerator{M, S, PSY.EXAC4, TG, P}},
+    h,
+    t,
+) where {M <: PSY.Machine, S <: PSY.Shaft, TG <: PSY.TurbineGov, P <: PSY.PSS}
+
+    #Obtain references
+    V_ref = get_V_ref(dynamic_device)
+
+    #Obtain avr
+    avr = PSY.get_avr(dynamic_device)
+
+    #Obtain indices for component w/r to device
+    local_ix = get_local_state_ix(dynamic_device, typeof(avr))
+
+    #Define inner states for component
+    internal_states = @view device_states[local_ix]
+    Vm = internal_states[1]
+    Vrll = internal_states[2]
+    Vr = internal_states[3]
+
+    #Define external states for device
+    V_th = sqrt(inner_vars[VR_gen_var]^2 + inner_vars[VI_gen_var]^2) # machine's terminal voltage
+    Vs = inner_vars[V_pss_var] # PSS output
+    Ifd = inner_vars[Xad_Ifd_var] # machine's field current in exciter base
+
+    #Get parameters
+    Tr = PSY.get_Tr(avr)
+    Vi_min, Vi_max = PSY.get_Vi_lim(avr)
+    Tc = PSY.get_Tc(avr)
+    Tb = PSY.get_Tb(avr)
+    Ka = PSY.get_Ka(avr)
+    Ta = PSY.get_Ta(avr)
+    Vr_min, Vr_max = PSY.get_Vr_lim(avr)
+    Kc = PSY.get_Kc(avr)
+
+    #Compute block derivatives
+    _, dVm_dt = low_pass_mass_matrix(V_th, Vm, 1.0, Tr)
+    V_in = clamp(V_ref + Vs - Vm, Vi_min, Vi_max)
+    y_ll, dVrll_dt = lead_lag_mass_matrix(V_in, Vrll, 1.0, Tc, Tb)
+    _, dVr_dt = low_pass_mass_matrix(y_ll, Vr, Ka, Ta)
+
+    #Compute 3 States AVR ODE:
+    output_ode[local_ix[1]] = dVm_dt
+    output_ode[local_ix[2]] = dVrll_dt
+    output_ode[local_ix[3]] = dVr_dt
+
+    #Update inner_vars
+    inner_vars[Vf_var] = clamp(Vr, Vr_min - Kc * Ifd, Vr_max - Kc * Ifd)
     return
 end
 

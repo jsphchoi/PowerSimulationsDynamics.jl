@@ -301,6 +301,81 @@ end
 
 function initialize_tg!(
     device_states,
+    ::PSY.StaticInjection,
+    dynamic_device::DynamicWrapper{PSY.DynamicGenerator{M, S, A, PSY.IEEETurbineGov1, P}},
+    inner_vars::AbstractVector,
+) where {M <: PSY.Machine, S <: PSY.Shaft, A <: PSY.AVR, P <: PSY.PSS}
+
+    #Get mechanical torque to SyncMach
+    τm0 = inner_vars[τm_var]
+
+    #Get parameters
+    tg = PSY.get_prime_mover(dynamic_device)
+    P_min, P_max = PSY.get_valve_position_limits(tg)
+    K_hp = PSY.get_K1(tg) + PSY.get_K3(tg) + PSY.get_K5(tg) + PSY.get_K7(tg)
+
+    valve0 = τm0 / K_hp
+    if (valve0 > P_max) || (valve0 < P_min)
+        @error(
+            "Valve position for TG in $(PSY.get_name(dynamic_device)) is $(valve0), outside its limits P_max = $P_max, P_min = $P_min.  Consider updating the operating point."
+        )
+    end
+
+    #Update Control Refs
+    PSY.set_P_ref!(tg, valve0)
+    set_P_ref(dynamic_device, valve0)
+
+    #Update states
+    tg_ix = get_local_state_ix(dynamic_device, typeof(tg))
+    tg_states = @view device_states[tg_ix]
+    tg_states[1] = 0.0
+    tg_states[2] = valve0
+    tg_states[3] = valve0
+    tg_states[4] = valve0
+    tg_states[5] = valve0
+    tg_states[6] = valve0
+    return
+end
+
+function initialize_tg!(
+    device_states,
+    ::PSY.StaticInjection,
+    dynamic_device::DynamicWrapper{PSY.DynamicGenerator{M, S, A, PSY.IEESGO, P}},
+    inner_vars::AbstractVector,
+) where {M <: PSY.Machine, S <: PSY.Shaft, A <: PSY.AVR, P <: PSY.PSS}
+
+    #Get mechanical torque to SyncMach
+    τm0 = inner_vars[τm_var]
+
+    #Get parameters
+    tg = PSY.get_prime_mover(dynamic_device)
+    K2 = PSY.get_K2(tg)
+    K3 = PSY.get_K3(tg)
+    P_min, P_max = PSY.get_P_lim(tg)
+
+    if (τm0 > P_max) || (τm0 < P_min)
+        @error(
+            "Power for TG in $(PSY.get_name(dynamic_device)) is $(τm0), outside its limits P_max = $P_max, P_min = $P_min.  Consider updating the operating point."
+        )
+    end
+
+    #Update Control Refs
+    PSY.set_P_ref!(tg, τm0)
+    set_P_ref(dynamic_device, τm0)
+
+    #Update states
+    tg_ix = get_local_state_ix(dynamic_device, typeof(tg))
+    tg_states = @view device_states[tg_ix]
+    tg_states[1] = 0.0
+    tg_states[2] = 0.0
+    tg_states[3] = τm0
+    tg_states[4] = K2 * τm0
+    tg_states[5] = K3 * K2 * τm0
+    return
+end
+
+function initialize_tg!(
+    device_states,
     static::PSY.StaticInjection,
     dynamic_device::DynamicWrapper{PSY.DynamicGenerator{M, S, A, PSY.HydroTurbineGov, P}},
     inner_vars::AbstractVector,
