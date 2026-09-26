@@ -16,6 +16,13 @@ function mass_matrix_pss_entries!(
     mass_matrix[global_index[:x_p5], global_index[:x_p5]] = PSY.get_T2(pss)
     mass_matrix[global_index[:x_p6], global_index[:x_p6]] = PSY.get_T4(pss)
     mass_matrix[global_index[:x_p7], global_index[:x_p7]] = PSY.get_T6(pss)
+    # TODO (REVIEW) Second order blocks with both coefficients zero pass their input through.
+    if iszero(PSY.get_A3(pss)) && iszero(PSY.get_A4(pss))
+        mass_matrix[global_index[:x_p2], global_index[:x_p2]] = 0.0
+    end
+    if iszero(PSY.get_A1(pss)) && iszero(PSY.get_A2(pss))
+        mass_matrix[global_index[:x_p4], global_index[:x_p4]] = 0.0
+    end
     return
 end
 
@@ -201,6 +208,15 @@ function mdl_pss_ode!(
     # Compute block derivatives
     _, dxp1_dt, dxp2_dt = low_pass_2nd_mass_matrix(u, x_p1, x_p2, 1.0, A3, A4)
     y_f, dxp3_dt, dxp4_dt = lead_lag_2nd_mass_matrix(x_p2, x_p3, x_p4, A1, A2, A5, A6)
+    # TODO (REVIEW) Pass-through when both coefficients of a second order block are zero, x_p2 and x_p4 algebraic.
+    if iszero(A3) && iszero(A4)
+        dxp1_dt = -x_p1
+        dxp2_dt = u - x_p2
+    end
+    if iszero(A1) && iszero(A2)
+        dxp3_dt = -x_p3
+        dxp4_dt = x_p2 - x_p4
+    end
     y_LL1, dxp5_dt = lead_lag_mass_matrix(y_f, x_p5, 1.0, T1, T2)
     y_LL2, dxp6_dt = lead_lag_mass_matrix(y_LL1, x_p6, 1.0, T3, T4)
     y_out, dxp7_dt = high_pass_mass_matrix(y_LL2, x_p7, Ks * T5, T6)
