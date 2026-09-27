@@ -1075,6 +1075,9 @@ function device!(
     return
 end
 
+# TODO (REVIEW) Parameter of a device as its model reads it, a hook for number types other than Float64
+get_parameter(device, getter, ::Type) = getter(device)
+
 function device_mass_matrix_entries!(
     mass_matrix::AbstractArray,
     dynamic_device::DynamicWrapper{PSY.DataCenterLoad},
@@ -1083,19 +1086,26 @@ function device_mass_matrix_entries!(
     device = get_device(dynamic_device)
     ωb = 2 * pi * get_system_base_frequency(dynamic_device)
     mass_matrix[global_index[:θ_pll], global_index[:θ_pll]] = 1 / ωb
-    mass_matrix[global_index[:vq_pll], global_index[:vq_pll]] = 1 / PSY.get_ω_lp(device)
+    mass_matrix[global_index[:vq_pll], global_index[:vq_pll]] =
+        1 / get_parameter(device, PSY.get_ω_lp, eltype(mass_matrix))
     for s in (:id_afe, :iq_afe)
-        mass_matrix[global_index[s], global_index[s]] = PSY.get_l_afe(device) / ωb
+        mass_matrix[global_index[s], global_index[s]] =
+            get_parameter(device, PSY.get_l_afe, eltype(mass_matrix)) / ωb
     end
-    mass_matrix[global_index[:v_dc], global_index[:v_dc]] = PSY.get_c_dc(device) / ωb
+    mass_matrix[global_index[:v_dc], global_index[:v_dc]] =
+        get_parameter(device, PSY.get_c_dc, eltype(mass_matrix)) / ωb
     for s in (:iu_cv, :iv_cv)
-        mass_matrix[global_index[s], global_index[s]] = PSY.get_l_vsi(device) / ωb
+        mass_matrix[global_index[s], global_index[s]] =
+            get_parameter(device, PSY.get_l_vsi, eltype(mass_matrix)) / ωb
     end
     for s in (:vu_vsi, :vv_vsi)
-        mass_matrix[global_index[s], global_index[s]] = PSY.get_c_vsi(device) / ωb
+        mass_matrix[global_index[s], global_index[s]] =
+            get_parameter(device, PSY.get_c_vsi, eltype(mass_matrix)) / ωb
     end
-    mass_matrix[global_index[:v_psu], global_index[:v_psu]] = PSY.get_c_psu(device) / ωb
-    mass_matrix[global_index[:v_eq], global_index[:v_eq]] = PSY.get_c_eq(device) / ωb
+    mass_matrix[global_index[:v_psu], global_index[:v_psu]] =
+        get_parameter(device, PSY.get_c_psu, eltype(mass_matrix)) / ωb
+    mass_matrix[global_index[:v_eq], global_index[:v_eq]] =
+        get_parameter(device, PSY.get_c_eq, eltype(mass_matrix)) / ωb
     return
 end
 
@@ -1153,29 +1163,29 @@ function device!(
 
     #Get parameters
     dynamic_device = get_device(dynamic_wrapper)
-    kp_pll = PSY.get_kp_pll(dynamic_device)
-    ki_pll = PSY.get_ki_pll(dynamic_device)
-    r_afe = PSY.get_r_afe(dynamic_device)
-    l_afe = PSY.get_l_afe(dynamic_device)
-    kp_dc_afe = PSY.get_kp_dc_afe(dynamic_device)
-    ki_dc_afe = PSY.get_ki_dc_afe(dynamic_device)
-    kp_c_afe = PSY.get_kp_c_afe(dynamic_device)
-    ki_c_afe = PSY.get_ki_c_afe(dynamic_device)
-    r_vsi = PSY.get_r_vsi(dynamic_device)
-    l_vsi = PSY.get_l_vsi(dynamic_device)
-    c_vsi = PSY.get_c_vsi(dynamic_device)
-    v_vsi_ref = PSY.get_v_vsi_ref(dynamic_device)
-    kp_v_vsi = PSY.get_kp_v_vsi(dynamic_device)
-    ki_v_vsi = PSY.get_ki_v_vsi(dynamic_device)
-    kp_c_vsi = PSY.get_kp_c_vsi(dynamic_device)
-    ki_c_vsi = PSY.get_ki_c_vsi(dynamic_device)
-    r_psu = PSY.get_r_psu(dynamic_device)
-    v_psu_ref = PSY.get_v_psu_ref(dynamic_device)
-    kp_v_psu = PSY.get_kp_v_psu(dynamic_device)
-    ki_v_psu = PSY.get_ki_v_psu(dynamic_device)
-    v_eq_ref = PSY.get_v_eq_ref(dynamic_device)
-    kp_v_eq = PSY.get_kp_v_eq(dynamic_device)
-    ki_v_eq = PSY.get_ki_v_eq(dynamic_device)
+    kp_pll = get_parameter(dynamic_device, PSY.get_kp_pll, T)
+    ki_pll = get_parameter(dynamic_device, PSY.get_ki_pll, T)
+    r_afe = get_parameter(dynamic_device, PSY.get_r_afe, T)
+    l_afe = get_parameter(dynamic_device, PSY.get_l_afe, T)
+    kp_dc_afe = get_parameter(dynamic_device, PSY.get_kp_dc_afe, T)
+    ki_dc_afe = get_parameter(dynamic_device, PSY.get_ki_dc_afe, T)
+    kp_c_afe = get_parameter(dynamic_device, PSY.get_kp_c_afe, T)
+    ki_c_afe = get_parameter(dynamic_device, PSY.get_ki_c_afe, T)
+    r_vsi = get_parameter(dynamic_device, PSY.get_r_vsi, T)
+    l_vsi = get_parameter(dynamic_device, PSY.get_l_vsi, T)
+    c_vsi = get_parameter(dynamic_device, PSY.get_c_vsi, T)
+    v_vsi_ref = get_parameter(dynamic_device, PSY.get_v_vsi_ref, T)
+    kp_v_vsi = get_parameter(dynamic_device, PSY.get_kp_v_vsi, T)
+    ki_v_vsi = get_parameter(dynamic_device, PSY.get_ki_v_vsi, T)
+    kp_c_vsi = get_parameter(dynamic_device, PSY.get_kp_c_vsi, T)
+    ki_c_vsi = get_parameter(dynamic_device, PSY.get_ki_c_vsi, T)
+    r_psu = get_parameter(dynamic_device, PSY.get_r_psu, T)
+    v_psu_ref = get_parameter(dynamic_device, PSY.get_v_psu_ref, T)
+    kp_v_psu = get_parameter(dynamic_device, PSY.get_kp_v_psu, T)
+    ki_v_psu = get_parameter(dynamic_device, PSY.get_ki_v_psu, T)
+    v_eq_ref = get_parameter(dynamic_device, PSY.get_v_eq_ref, T)
+    kp_v_eq = get_parameter(dynamic_device, PSY.get_kp_v_eq, T)
+    ki_v_eq = get_parameter(dynamic_device, PSY.get_ki_v_eq, T)
     base_power = PSY.get_base_power(dynamic_device)
 
     # AFE rectifier
