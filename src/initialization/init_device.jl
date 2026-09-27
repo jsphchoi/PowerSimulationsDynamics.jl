@@ -552,6 +552,90 @@ function initialize_dynamic_device!(
 end
 
 function initialize_dynamic_device!(
+    dynamic_wrapper::DynamicWrapper{PSY.DataCenterLoad},
+    device::PSY.StaticInjection,
+    ::AbstractVector,
+)
+    Sbase = get_system_base_power(dynamic_wrapper)
+    device_states = zeros(PSY.get_n_states(dynamic_wrapper))
+
+    # Get parameters
+    dynamic_device = get_device(dynamic_wrapper)
+    r_afe = PSY.get_r_afe(dynamic_device)
+    ki_dc_afe = PSY.get_ki_dc_afe(dynamic_device)
+    ki_c_afe = PSY.get_ki_c_afe(dynamic_device)
+    r_vsi = PSY.get_r_vsi(dynamic_device)
+    c_vsi = PSY.get_c_vsi(dynamic_device)
+    v_vsi_ref = PSY.get_v_vsi_ref(dynamic_device)
+    ki_v_vsi = PSY.get_ki_v_vsi(dynamic_device)
+    ki_c_vsi = PSY.get_ki_c_vsi(dynamic_device)
+    r_psu = PSY.get_r_psu(dynamic_device)
+    v_psu_ref = PSY.get_v_psu_ref(dynamic_device)
+    ki_v_psu = PSY.get_ki_v_psu(dynamic_device)
+    v_eq_ref = PSY.get_v_eq_ref(dynamic_device)
+    ki_v_eq = PSY.get_ki_v_eq(dynamic_device)
+    base_power = PSY.get_base_power(dynamic_device)
+    v_dc_ref = get_V_ref(dynamic_wrapper)
+
+    #PowerFlow Data
+    if isa(device, PSY.StandardLoad)
+        P0 = get_total_p(device) * Sbase / base_power # in pu (device base)
+        Q0 = get_total_q(device) * Sbase / base_power # in pu (device base)
+    else
+        P0 = PSY.get_active_power(device) * Sbase / base_power # in pu (device base)
+        Q0 = PSY.get_reactive_power(device) * Sbase / base_power # in pu (device base)
+    end
+    Vm = PSY.get_magnitude(PSY.get_bus(device))
+    θ = PSY.get_angle(PSY.get_bus(device))
+
+    # AFE rectifier aligned with the bus voltage
+    id_afe = P0 / Vm
+    iq_afe = -Q0 / Vm
+    P_dc = P0 - r_afe * (id_afe^2 + iq_afe^2)
+
+    # VSI conductance g_eq delivering P_dc
+    a = r_vsi * v_vsi_ref^2
+    b = v_vsi_ref^2
+    c = r_vsi * c_vsi^2 * v_vsi_ref^2 - P_dc
+    g_eq = iszero(a) ? -c / b : (-b + sqrt(b^2 - 4 * a * c)) / (2 * a)
+    iu_cv = g_eq * v_vsi_ref
+    iv_cv = -c_vsi * v_vsi_ref
+
+    # Server load demand consistent with the power flow
+    p_load = (g_eq - r_psu * g_eq^2) * v_vsi_ref^2
+    i_eq = p_load / (3 * v_eq_ref)
+
+    device_states[1] = θ # θ_pll
+    device_states[2] = 0.0 # ϵ_pll
+    device_states[3] = 0.0 # vq_pll
+    device_states[4] = id_afe
+    device_states[5] = iq_afe
+    device_states[6] = id_afe / ki_dc_afe # ξ_dc_afe
+    device_states[7] = (Vm - r_afe * id_afe) / ki_c_afe # γd_afe
+    device_states[8] = -r_afe * iq_afe / ki_c_afe # γq_afe
+    device_states[9] = v_dc_ref # v_dc
+    device_states[10] = iu_cv
+    device_states[11] = iv_cv
+    device_states[12] = v_vsi_ref # vu_vsi
+    device_states[13] = 0.0 # vv_vsi
+    device_states[14] = iu_cv / ki_v_vsi # ξu_vsi
+    device_states[15] = 0.0 # ξv_vsi
+    device_states[16] = (v_vsi_ref + r_vsi * iu_cv) / ki_c_vsi # γu_vsi
+    device_states[17] = r_vsi * iv_cv / ki_c_vsi # γv_vsi
+    device_states[18] = v_psu_ref # v_psu
+    device_states[19] = g_eq / ki_v_psu # ξ_psu
+    device_states[20] = v_eq_ref # v_eq
+    device_states[21] = i_eq / ki_v_eq # ξ_eq
+
+    # update P_ref and Q_ref
+    PSY.set_P_ref!(dynamic_device, p_load)
+    set_P_ref(dynamic_wrapper, p_load)
+    PSY.set_Q_ref!(dynamic_device, iq_afe)
+    set_Q_ref(dynamic_wrapper, iq_afe)
+    return device_states
+end
+
+function initialize_dynamic_device!(
     dynamic_wrapper::DynamicWrapper{PSY.AggregateDistributedGenerationA},
     static::PSY.StaticInjection,
     initial_inner_vars::AbstractVector,

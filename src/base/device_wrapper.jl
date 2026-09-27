@@ -6,6 +6,7 @@ get_inner_vars_count(::PSY.SimplifiedSingleCageInductionMachine) = 0
 get_inner_vars_count(::PSY.CSVGN1) = 0
 get_inner_vars_count(::PSY.AggregateDistributedGenerationA) = 0
 get_inner_vars_count(::PSY.ActiveConstantPowerLoad) = 0
+get_inner_vars_count(::PSY.DataCenterLoad) = 0
 
 index(::Type{<:PSY.TurbineGov}) = 1
 index(::Type{<:PSY.PSS}) = 2

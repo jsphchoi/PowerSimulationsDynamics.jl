@@ -1077,6 +1077,168 @@ end
 
 function device_mass_matrix_entries!(
     mass_matrix::AbstractArray,
+    dynamic_device::DynamicWrapper{PSY.DataCenterLoad},
+)
+    global_index = get_global_index(dynamic_device)
+    device = get_device(dynamic_device)
+    ωb = 2 * pi * get_system_base_frequency(dynamic_device)
+    mass_matrix[global_index[:θ_pll], global_index[:θ_pll]] = 1 / ωb
+    mass_matrix[global_index[:vq_pll], global_index[:vq_pll]] = 1 / PSY.get_ω_lp(device)
+    for s in (:id_afe, :iq_afe)
+        mass_matrix[global_index[s], global_index[s]] = PSY.get_l_afe(device) / ωb
+    end
+    mass_matrix[global_index[:v_dc], global_index[:v_dc]] = PSY.get_c_dc(device) / ωb
+    for s in (:iu_cv, :iv_cv)
+        mass_matrix[global_index[s], global_index[s]] = PSY.get_l_vsi(device) / ωb
+    end
+    for s in (:vu_vsi, :vv_vsi)
+        mass_matrix[global_index[s], global_index[s]] = PSY.get_c_vsi(device) / ωb
+    end
+    mass_matrix[global_index[:v_psu], global_index[:v_psu]] = PSY.get_c_psu(device) / ωb
+    mass_matrix[global_index[:v_eq], global_index[:v_eq]] = PSY.get_c_eq(device) / ωb
+    return
+end
+
+"""
+Model of 21-state data center load in Julia.
+Based on the paper `Dynamic Modeling of Data-Center Power Delivery for Power System Resonance Analysis`
+by X. Zhao and J. Zhao.
+"""
+function device!(
+    device_states::AbstractArray{T},
+    output_ode::AbstractArray{T},
+    voltage_r::T,
+    voltage_i::T,
+    current_r::AbstractArray{T},
+    current_i::AbstractArray{T},
+    global_vars::AbstractArray{T},
+    ::AbstractArray{T},
+    dynamic_wrapper::DynamicWrapper{PSY.DataCenterLoad},
+    h,
+    t,
+) where {T <: ACCEPTED_REAL_TYPES}
+    Sbase = get_system_base_power(dynamic_wrapper)
+    if get_connection_status(dynamic_wrapper) < 1.0
+        output_ode .= zero(T)
+        return
+    end
+    sys_ω = global_vars[GLOBAL_VAR_SYS_FREQ_INDEX]
+    p_load = get_P_ref(dynamic_wrapper)
+    iq_ref_afe = get_Q_ref(dynamic_wrapper)
+    v_dc_ref = get_V_ref(dynamic_wrapper)
+    ω_vsi = 1.0
+
+    # get states
+    θ_pll = device_states[1]
+    ϵ_pll = device_states[2]
+    vq_pll = device_states[3]
+    id_afe = device_states[4]
+    iq_afe = device_states[5]
+    ξ_dc_afe = device_states[6]
+    γd_afe = device_states[7]
+    γq_afe = device_states[8]
+    v_dc = device_states[9]
+    iu_cv = device_states[10]
+    iv_cv = device_states[11]
+    vu_vsi = device_states[12]
+    vv_vsi = device_states[13]
+    ξu_vsi = device_states[14]
+    ξv_vsi = device_states[15]
+    γu_vsi = device_states[16]
+    γv_vsi = device_states[17]
+    v_psu = device_states[18]
+    ξ_psu = device_states[19]
+    v_eq = device_states[20]
+    ξ_eq = device_states[21]
+
+    #Get parameters
+    dynamic_device = get_device(dynamic_wrapper)
+    kp_pll = PSY.get_kp_pll(dynamic_device)
+    ki_pll = PSY.get_ki_pll(dynamic_device)
+    r_afe = PSY.get_r_afe(dynamic_device)
+    l_afe = PSY.get_l_afe(dynamic_device)
+    kp_dc_afe = PSY.get_kp_dc_afe(dynamic_device)
+    ki_dc_afe = PSY.get_ki_dc_afe(dynamic_device)
+    kp_c_afe = PSY.get_kp_c_afe(dynamic_device)
+    ki_c_afe = PSY.get_ki_c_afe(dynamic_device)
+    r_vsi = PSY.get_r_vsi(dynamic_device)
+    l_vsi = PSY.get_l_vsi(dynamic_device)
+    c_vsi = PSY.get_c_vsi(dynamic_device)
+    v_vsi_ref = PSY.get_v_vsi_ref(dynamic_device)
+    kp_v_vsi = PSY.get_kp_v_vsi(dynamic_device)
+    ki_v_vsi = PSY.get_ki_v_vsi(dynamic_device)
+    kp_c_vsi = PSY.get_kp_c_vsi(dynamic_device)
+    ki_c_vsi = PSY.get_ki_c_vsi(dynamic_device)
+    r_psu = PSY.get_r_psu(dynamic_device)
+    v_psu_ref = PSY.get_v_psu_ref(dynamic_device)
+    kp_v_psu = PSY.get_kp_v_psu(dynamic_device)
+    ki_v_psu = PSY.get_ki_v_psu(dynamic_device)
+    v_eq_ref = PSY.get_v_eq_ref(dynamic_device)
+    kp_v_eq = PSY.get_kp_v_eq(dynamic_device)
+    ki_v_eq = PSY.get_ki_v_eq(dynamic_device)
+    base_power = PSY.get_base_power(dynamic_device)
+
+    # AFE rectifier
+    ω_pll = sys_ω + kp_pll * vq_pll + ki_pll * ϵ_pll
+    vd_pcc = cos(θ_pll) * voltage_r + sin(θ_pll) * voltage_i
+    vq_pcc = -sin(θ_pll) * voltage_r + cos(θ_pll) * voltage_i
+    id_ref_afe = kp_dc_afe * (v_dc_ref - v_dc) + ki_dc_afe * ξ_dc_afe
+    vd_ref_afe =
+        kp_c_afe * (id_afe - id_ref_afe) + ki_c_afe * γd_afe - ω_pll * l_afe * iq_afe
+    vq_ref_afe =
+        kp_c_afe * (iq_afe - iq_ref_afe) + ki_c_afe * γq_afe + ω_pll * l_afe * id_afe
+
+    # VSI
+    iu_ref_cv = kp_v_vsi * (v_vsi_ref - vu_vsi) + ki_v_vsi * ξu_vsi + ω_vsi * c_vsi * vv_vsi
+    iv_ref_cv = -kp_v_vsi * vv_vsi + ki_v_vsi * ξv_vsi - ω_vsi * c_vsi * vu_vsi
+    vu_ref_cv = kp_c_vsi * (iu_ref_cv - iu_cv) + ki_c_vsi * γu_vsi + ω_vsi * l_vsi * iv_cv
+    vv_ref_cv = kp_c_vsi * (iv_ref_cv - iv_cv) + ki_c_vsi * γv_vsi - ω_vsi * l_vsi * iu_cv
+
+    # PSU array
+    g_eq = kp_v_psu * (v_psu_ref - v_psu) + ki_v_psu * ξ_psu
+    iu_vsi = g_eq * vu_vsi
+    iv_vsi = g_eq * vv_vsi
+
+    # Downstream DC-DC converter and load
+    g_load = p_load / (3 * v_eq_ref^2)
+    i_eq = kp_v_eq * (v_eq_ref - v_eq) + ki_v_eq * ξ_eq
+    i_psu = v_eq * i_eq / v_psu
+
+    # DC link
+    i_dc_in = (vd_ref_afe * id_afe + vq_ref_afe * iq_afe) / v_dc
+    i_dc_out = (vu_ref_cv * iu_cv + vv_ref_cv * iv_cv) / v_dc
+
+    #Compute ODEs
+    output_ode[1] = ω_pll - sys_ω
+    output_ode[2] = vq_pll
+    output_ode[3] = vq_pcc - vq_pll
+    output_ode[4] = vd_pcc - vd_ref_afe - r_afe * id_afe - ω_pll * l_afe * iq_afe
+    output_ode[5] = vq_pcc - vq_ref_afe - r_afe * iq_afe + ω_pll * l_afe * id_afe
+    output_ode[6] = v_dc_ref - v_dc
+    output_ode[7] = id_afe - id_ref_afe
+    output_ode[8] = iq_afe - iq_ref_afe
+    output_ode[9] = i_dc_in - i_dc_out
+    output_ode[10] = vu_ref_cv - vu_vsi - r_vsi * iu_cv - ω_vsi * l_vsi * iv_cv
+    output_ode[11] = vv_ref_cv - vv_vsi - r_vsi * iv_cv + ω_vsi * l_vsi * iu_cv
+    output_ode[12] = iu_cv - iu_vsi - ω_vsi * c_vsi * vv_vsi
+    output_ode[13] = iv_cv - iv_vsi + ω_vsi * c_vsi * vu_vsi
+    output_ode[14] = v_vsi_ref - vu_vsi
+    output_ode[15] = -vv_vsi
+    output_ode[16] = iu_ref_cv - iu_cv
+    output_ode[17] = iv_ref_cv - iv_cv
+    output_ode[18] = (g_eq - r_psu * g_eq^2) * (vu_vsi^2 + vv_vsi^2) / (3 * v_psu) - i_psu
+    output_ode[19] = v_psu_ref - v_psu
+    output_ode[20] = i_eq - g_load * v_eq
+    output_ode[21] = v_eq_ref - v_eq
+
+    #Update current
+    current_r[1] -= (cos(θ_pll) * id_afe - sin(θ_pll) * iq_afe) * base_power / Sbase  # in system base
+    current_i[1] -= (sin(θ_pll) * id_afe + cos(θ_pll) * iq_afe) * base_power / Sbase  # in system base
+    return
+end
+
+function device_mass_matrix_entries!(
+    mass_matrix::AbstractArray,
     dynamic_device::DynamicWrapper{PSY.AggregateDistributedGenerationA},
 )
     global_index = get_global_index(dynamic_device)
