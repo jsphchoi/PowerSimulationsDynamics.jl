@@ -1075,7 +1075,7 @@ function device!(
     return
 end
 
-# TODO (REVIEW) Parameter of a device as its model reads it, a hook for number types other than Float64
+# Parameter of a device as its model reads it, a hook for number types other than Float64
 get_parameter(device, getter, ::Type) = getter(device)
 
 function device_mass_matrix_entries!(

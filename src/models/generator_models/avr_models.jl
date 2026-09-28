@@ -689,7 +689,7 @@ function mdl_avr_ode!(
     return
 end
 
-# TODO (REVIEW) IEEET1 regulator limits, VRMAX = 0 read as 999 as in ANDES.
+# IEEET1 regulator limits, VRMAX = 0 read as 999 as in ANDES.
 function _get_Vr_lim(avr::PSY.IEEET1)
     Vr_min, Vr_max = PSY.get_Vr_lim(avr)
     return Vr_min, (Vr_max == 0.0 ? 999.0 : Vr_max)
@@ -760,7 +760,7 @@ function mdl_avr_ode!(
     return
 end
 
-# TODO (REVIEW) ESST4B rectifier output V_B, terminal current terms (Ki, Xl) not implemented.
+# ESST4B rectifier output V_B, terminal current terms (Ki, Xl) not implemented.
 function _get_V_B(avr::PSY.ESST4B, V_th::ACCEPTED_REAL_TYPES, Ifd::ACCEPTED_REAL_TYPES)
     if PSY.get_Ki(avr) != 0.0 || PSY.get_Xl(avr) != 0.0
         error("Terminal current compensation for AVR ESST4B not implemented yet.")
@@ -770,7 +770,7 @@ function _get_V_B(avr::PSY.ESST4B, V_th::ACCEPTED_REAL_TYPES, Ifd::ACCEPTED_REAL
     return min(V_e * rectifier_function(I_n), PSY.get_VB_max(avr))
 end
 
-# TODO (REVIEW) ESST4B inner PI output V_M, Kg feedback of V_B * V_M solved in closed form.
+# ESST4B inner PI output V_M, Kg feedback of V_B * V_M solved in closed form.
 function _get_V_M(
     avr::PSY.ESST4B,
     Vr2::ACCEPTED_REAL_TYPES,
@@ -823,7 +823,7 @@ function mdl_avr_ode!(
     Ta = PSY.get_Ta(avr)
     K_im = PSY.get_K_im(avr)
     Kg = PSY.get_Kg(avr)
-    Ks = 2.0 # TODO (REVIEW) ANDES tracking anti-windup gain of both PI blocks (config ksr, ksm).
+    Ks = 2.0 # ANDES tracking anti-windup gain of both PI blocks (config ksr, ksm).
 
     #Compute block derivatives
     _, dVt_dt = low_pass_mass_matrix(V_th, Vt, 1.0, Tr)

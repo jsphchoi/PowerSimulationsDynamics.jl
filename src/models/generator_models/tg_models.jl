@@ -361,7 +361,7 @@ function mdl_tg_ode!(
     _, dxg4_dt = low_pass_mass_matrix(x_g3, x_g4, 1.0, T5)
     _, dxg5_dt = low_pass_mass_matrix(x_g4, x_g5, 1.0, T6)
     _, dxg6_dt = low_pass_mass_matrix(x_g5, x_g6, 1.0, T7)
-    # TODO (REVIEW) Low pressure outputs (K2, K4, K6, K8) drive a second machine, not modeled.
+    # Low pressure outputs (K2, K4, K6, K8) drive a second machine, not modeled.
     P_m = K1 * x_g3 + K3 * x_g4 + K5 * x_g5 + K7 * x_g6
 
     #Compute 6 State TG ODE:

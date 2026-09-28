@@ -41,7 +41,7 @@ function saturation_function(avr::Union{PSY.ESAC1A, PSY.EXAC1}, x::ACCEPTED_REAL
     return Sat_B * (x - Sat_A)^2 / x
 end
 
-# TODO (REVIEW) Quadratic saturation, zero below A.
+# Quadratic saturation, zero below A.
 function saturation_function(avr::Union{PSY.IEEEX1, PSY.IEEET1}, x::ACCEPTED_REAL_TYPES)
     Sat_A, Sat_B = PSY.get_saturation_coeffs(avr)
     if x > Sat_A

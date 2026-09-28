@@ -45,7 +45,7 @@ function transform_ybus_to_rectangular(
     ybus::SparseArrays.SparseMatrixCSC{Complex{Float64}, Int},
 )
     # TODO: Improve performance here
-    # TODO (REVIEW) Built from Ybus^T, network_model reads it by columns and so computes Ybus * V.
+    # Built from Ybus^T, network_model reads it by columns and so computes Ybus * V.
     ybus_t = SparseArrays.sparse(transpose(ybus))
     return hcat(vcat(real(ybus_t), -imag(ybus_t)), vcat(imag(ybus_t), real(ybus_t)))
 end

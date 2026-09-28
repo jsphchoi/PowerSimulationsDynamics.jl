@@ -123,7 +123,7 @@ function _record_change!(
     Y21_imag::Float64,
 )
 
-    # TODO (REVIEW) ybus_rectangular is built from Ybus^T, so Y21 goes to (from, to) and Y12 to (to, from).
+    # ybus_rectangular is built from Ybus^T, so Y21 goes to (from, to) and Y12 to (to, from).
     # First Quadrant Real Part Changes
     ybus[bus_from_no, bus_from_no] += Y11_real
     ybus[bus_from_no, bus_to_no] += Y21_real
@@ -322,7 +322,7 @@ end
 # (see _wrap_static_injectors / _wrap_loads in simulation_inputs.jl) and is
 # never updated dynamically. If a FixedAdmittance perturbation is added in the
 # future, the new ybus_update! method must mirror the rectangular four-entry
-# pattern used for ACBranch above, since ybus_rectangular is real-valued Float32.
+# pattern used for ACBranch above, since ybus_rectangular is real-valued Float64.
 
 function ybus_update!(integrator_params, branch::PSY.ACBranch, mult::Float64)
     ybus_update!(integrator_params.ybus_rectangular, branch, integrator_params.lookup, mult)

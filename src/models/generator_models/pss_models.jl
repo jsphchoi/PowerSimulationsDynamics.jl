@@ -16,7 +16,7 @@ function mass_matrix_pss_entries!(
     mass_matrix[global_index[:x_p5], global_index[:x_p5]] = PSY.get_T2(pss)
     mass_matrix[global_index[:x_p6], global_index[:x_p6]] = PSY.get_T4(pss)
     mass_matrix[global_index[:x_p7], global_index[:x_p7]] = PSY.get_T6(pss)
-    # TODO (REVIEW) Second order blocks with both coefficients zero pass their input through.
+    # Second order blocks with both coefficients zero pass their input through.
     if iszero(PSY.get_A3(pss)) && iszero(PSY.get_A4(pss))
         mass_matrix[global_index[:x_p2], global_index[:x_p2]] = 0.0
     end
@@ -63,7 +63,7 @@ function get_pss_input_signal(
     ω_sys::ACCEPTED_REAL_TYPES,
     dynamic_device::DynamicWrapper{PSY.DynamicGenerator{M, S, A, TG, P}},
 ) where {M <: PSY.Machine, S <: PSY.Shaft, A <: PSY.AVR, TG <: PSY.TurbineGov, P <: PSY.PSS}
-    # TODO (REVIEW) Electric power on machine base, as in ANDES IEEEST MODE 3.
+    # Electric power on machine base, as in ANDES IEEEST MODE 3.
     return inner_vars[τe_var]
 end
 
@@ -207,7 +207,7 @@ function mdl_pss_ode!(
     # Compute block derivatives
     _, dxp1_dt, dxp2_dt = low_pass_2nd_mass_matrix(u, x_p1, x_p2, 1.0, A3, A4)
     y_f, dxp3_dt, dxp4_dt = lead_lag_2nd_mass_matrix(x_p2, x_p3, x_p4, A1, A2, A5, A6)
-    # TODO (REVIEW) Pass-through when both coefficients of a second order block are zero, x_p2 and x_p4 algebraic.
+    # Pass-through when both coefficients of a second order block are zero, x_p2 and x_p4 algebraic.
     if iszero(A3) && iszero(A4)
         dxp1_dt = -x_p1
         dxp2_dt = u - x_p2
