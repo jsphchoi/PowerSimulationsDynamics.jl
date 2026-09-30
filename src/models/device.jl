@@ -1133,8 +1133,8 @@ function device!(
         return
     end
     sys_ω = global_vars[GLOBAL_VAR_SYS_FREQ_INDEX]
-    p_load = get_P_ref(dynamic_wrapper)
-    iq_ref_afe = get_Q_ref(dynamic_wrapper)
+    p_load = get_parameter(dynamic_wrapper, get_P_ref, T)
+    iq_ref_afe = get_parameter(dynamic_wrapper, get_Q_ref, T)
     v_dc_ref = get_V_ref(dynamic_wrapper)
     ω_vsi = 1.0
 
